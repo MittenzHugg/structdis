@@ -5,7 +5,6 @@ sys.path.extend(['.','..'])
 
 from pycparser import parse_file, c_ast
 from ctypes import *
-from pprint import *
 import uuid
 
 RE_CHILD_ARRAY = re.compile(r'(.*)\[(.*)\]')
@@ -41,6 +40,7 @@ baseTypes = {
 
 n64types = baseTypes
 struct_decls = {}
+none_decls = {}
 
 def __parse_dim(val):
     global n64types
@@ -68,9 +68,7 @@ def __parse_dim(val):
 
 def __parse_array(node):
     global n64types
-    #pprint(node)
     dim = __parse_dim(node.dim)
-    #print(dim)
     if type(node.type) == c_ast.ArrayDecl:
         return __parse_array(node.type) * dim
     elif type(node.type) == c_ast.PtrDecl:
@@ -82,8 +80,13 @@ def __parse_array(node):
 
 
 def __parse_fields(node):
+    global none_decls
     fields = []
     annon = []
+
+    if node.type.decls == None :
+        n_match = filter(lambda none_dec: node.type.name == none_dec.type.name,  none_decls)
+        node = next(n_match)
 
     for member in node.type.decls:
         if(type(member.type) == c_ast.TypeDecl): #predefined type
@@ -137,11 +140,15 @@ def __parse_typedecl(node):
 
 def __parse_ast(ast):
     global n64types
+    global none_decls
+
     # ptrs can be processed first since we don't care about their type in this instance
     ptrdefs = filter(lambda node: type(node) == c_ast.Typedef and type(node.type) == c_ast.PtrDecl, ast.ext)
     ptrdefs = filter(lambda node: node.name not in baseTypes, ptrdefs)
     for node in ptrdefs:
         n64types[node.name] = c_int32
+
+    none_decls = list(filter(lambda node: type(node) == c_ast.Decl and (node.name == None), ast.ext))
 
     #process types and arraytypes together
     typedefs = filter(lambda node: type(node) == c_ast.Typedef and (type(node.type) == c_ast.TypeDecl or type(node.type) == c_ast.ArrayDecl), ast.ext)
@@ -150,7 +157,6 @@ def __parse_ast(ast):
     typedefs = list(typedefs)
 
     for node in typedefs:
-        #pprint(node)
         if type(node.type) == c_ast.ArrayDecl:
             n64types[node.name] = __parse_array(node.type)
         else:
@@ -195,15 +201,17 @@ def print_ctype(val):
 
 #---------------------------------------------------------------
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        
+    if len(sys.argv) > 5:
+
+        offset = 0;
         """ Load C file into dict representation of ast  """
         from_c_header(sys.argv[1])
 
         """ generate using struct module """
         f = open(sys.argv[2], "rb").read()
-        s = n64types[sys.argv[3]].from_buffer_copy(f)
-        print(sys.argv[3] + " " + sys.argv[4] + " = " + print_ctype(s)[:-2] + ";")
+        offset = int(sys.argv[3])
+        s = n64types[sys.argv[4]].from_buffer_copy(f, offset)
+        print(sys.argv[4] + " " + sys.argv[5] + " = " + print_ctype(s)[:-2] + ";")
 
         
     else:
